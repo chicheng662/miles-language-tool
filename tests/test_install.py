@@ -21,7 +21,8 @@ class InstallationTests(unittest.TestCase):
         self.addCleanup(process_guard.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Windows temp paths may be aliases; match the installer canonical paths.
+        self.root = Path(self.temp.name).resolve()
         self.game = self.root / 'game'
         self.assets = self.game / 'asset_archive'
         self.assets.mkdir(parents=True)
