@@ -1,0 +1,28 @@
+# Local runtimes and outputs
+.tools/
+build/
+dist/
+backups/
+evidence/
+.miles-language-tool/
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+*.log
+# Player/game resources and personal configuration
+*.gfx
+*.swf
+*.dsar
+*.localization
+*.save*
+toc
+toc.original
+toc.patched
+bilingual_subtitles
+subtitle-table.json
+coverage.json
+state.json
+profile.json
+.env
+.env.*
