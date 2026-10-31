@@ -75,8 +75,8 @@ class Profile:
             if type(value) is not int or not 480 <= value <= 16384:
                 raise ValueError('游戏输出尺寸应为 480–16384 像素的整数。')
         for key, low, high in (('top_size', 16, 56), ('bottom_size', 16, 56),
-                               ('top_margin_px', 0, self.output_height * .35),
-                               ('bottom_margin_px', 0, self.output_height * .35),
+                               ('top_margin_px', 0, (self.output_height if self.layout == 'split' else 16384) * .35),
+                               ('bottom_margin_px', 0, (self.output_height if self.layout == 'stacked' else 16384) * .35),
                                ('line_gap_px', 0, 120)):
             value = getattr(self, key)
             if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
@@ -121,4 +121,4 @@ class Profile:
 
     def english_first(self):
         return replace(self, layout='stacked', top_language='en', bottom_language='zh-CN',
-                       top_size=36, bottom_size=24)
+                       top_size=36, bottom_size=24, bottom_margin_px=100, line_gap_px=8)

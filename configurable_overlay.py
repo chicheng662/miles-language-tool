@@ -138,6 +138,18 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
 
       private function MMPlaceStacked() : void
       {
+         var hasDual:Boolean = (this.sub_1_show && this.subtitle_1 != null && this.subtitle_1["mmDual"] == true) || (this.sub_2_show && this.subtitle_2 != null && this.subtitle_2["mmDual"] == true);
+         if(!hasDual)
+         {
+            if(this.subtitle_1 != null) this.subtitle_1.y = this.sub_y;
+            if(this.subtitle_2 != null)
+            {
+               this.subtitle_2.y = this.sub_y;
+               if(this.sub_1_show && this.subtitle_1 != null)
+                  this.subtitle_2.y = this.sub_y - this.subtitle_1.bg.height / 2 - this.subtitle_2.bg.height / 2 - 15;
+            }
+            return;
+         }
          var cursor:Number = MM_BOTTOM_Y;
          var gap:Number = MM_LINE_GAP;
          var owners:Array = [this.subtitle_1,this.subtitle_2];
@@ -152,11 +164,13 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
          for(var i:int = 0; i < owners.length; i++)
          {
             owner = owners[i] as MovieClip;
-            if(owner == null || !shown[i] || owner["mmDual"] != true) continue;
+            if(owner == null || !shown[i]) continue;
             lowerField = owner.message.txt;
+            if(owner.message.big_txt.visible) lowerField = owner.message.big_txt;
+            else if(owner.message.medium_txt.visible) lowerField = owner.message.medium_txt;
             layer = owner.getChildByName("mmTop") as MovieClip;
             lower = lowerField.visible && lowerField.text.length > 0;
-            upper = layer != null && layer.visible && layer.message.txt.text.length > 0;
+            upper = owner["mmDual"] == true && layer != null && layer.visible && layer.message.txt.text.length > 0;
             if(!lower && !upper) continue;
             if(lower)
             {

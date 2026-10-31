@@ -38,3 +38,21 @@ class ConfiguratorLayoutTests(unittest.TestCase):
         self.assertTrue(self.app.canvas.find_withtag('preview-top'))
         self.app.vars['layout'].set(LAYOUT_LABELS['split'])
         self.assertEqual(self.app.read_profile().layout, 'split')
+
+    def test_inactive_margin_after_resolution_change_does_not_block_application(self):
+        self.app.set_profile(Profile(layout='stacked', output_width=3840, output_height=2160,
+                                     bottom_margin_px=700))
+        self.app.vars['layout'].set(LAYOUT_LABELS['split'])
+        self.app.vars['output_width'].set(1920)
+        self.app.vars['output_height'].set(1080)
+        self.assertEqual(self.app.read_profile().layout, 'split')
+        self.app.english_first()
+        self.assertEqual(self.app.read_profile().layout, 'stacked')
+        self.assertEqual(self.app.read_profile().bottom_margin_px, 100)
+
+    def test_inactive_split_margin_does_not_block_stacked_layout(self):
+        self.app.set_profile(Profile(output_width=3840, output_height=2160, top_margin_px=700))
+        self.app.vars['layout'].set(LAYOUT_LABELS['stacked'])
+        self.app.vars['output_width'].set(1920)
+        self.app.vars['output_height'].set(1080)
+        self.assertEqual(self.app.read_profile().layout, 'stacked')

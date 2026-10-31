@@ -61,6 +61,9 @@ class ConfiguratorBackendTests(unittest.TestCase):
         self.assertNotIn('removeChild(layer)', changed)
         placement = changed.split('private function MMPlaceStacked', 1)[1].split('public function FormatSubtitle', 1)[0]
         self.assertFalse('this.MMPlaceTop();' in placement, 'Placement must not recurse into itself')
+        self.assertTrue('owner.message.big_txt' in placement, 'Native large subtitles must participate in occupancy')
+        self.assertTrue('this.subtitle_1.y = this.sub_y;' in placement, 'Native-only transition must restore the original anchor')
+        self.assertFalse('owner[\"mmDual\"] != true) continue' in placement, 'Do not skip native subtitle slots')
 
     @patch('configurator_backend.game_running', return_value=False)
     def test_build_keeps_menus_and_english_timing(self, guard):

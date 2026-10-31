@@ -9,7 +9,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 SOURCE_FILES = ('archive.py', 'localization.py', 'dialogue.py', 'configuration.py',
                 'patch.py', 'configurable_overlay.py', 'configurator_backend.py', 'configurator_app.py',
-                'language_baselines.json')
+                'language_baselines.json', 'subtitle_layout.py')
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
         str(ROOT / 'configurator_app.py'),
     ])
     package = dist / 'MilesLanguageTool'
-    for document in ('LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'README.md', 'BUILDING.md'):
+    for document in ('LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'README.md', 'BUILDING.md', '工具使用说明.md'):
         shutil.copy2(ROOT / document, package / document)
     shutil.copytree(ROOT / 'licenses', package / 'licenses', dirs_exist_ok=True)
     runtime = package / 'runtime'
@@ -44,6 +44,7 @@ def main():
     from configuration import Profile
     examples = package / 'profiles'
     examples.mkdir(exist_ok=True)
+    Profile().english_first().save(examples / '大英文在上-小中文在下.json')
     Profile().save(examples / '英语在下-简中在上.json')
     Profile(top_language='en', bottom_language='zh-CN').save(examples / '简中在下-英语在上.json')
     Profile(top_language='ja', bottom_language='en').save(examples / '英语在下-日语在上.json')
@@ -64,7 +65,7 @@ def main():
     manifest = {p.relative_to(package).as_posix(): sha256(p.read_bytes())
                 for p in package.rglob('*') if p.is_file() and p.name != 'SHA256SUMS.json'}
     (package / 'SHA256SUMS.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
-    archive = dist / 'MilesLanguageTool-v0.1.0-win64.zip'
+    archive = dist / 'MilesLanguageTool-v0.2.0-win64.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as stream:
         for path in package.rglob('*'):
             if path.is_file():

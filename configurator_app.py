@@ -141,7 +141,7 @@ class Configurator:
         right.pack(side='left', fill='both', expand=True)
         ttk.Label(right, text='字幕布局预览', font=('Microsoft YaHei UI', 12, 'bold')).pack(anchor='w')
         self.canvas = tk.Canvas(right, bg='#111c2e', highlightthickness=0, height=320)
-        self.canvas.pack(fill='both', expand=True, pady=(9, 8))
+        self.canvas.pack(fill='x', pady=(9, 8))
         self.canvas.bind('<Configure>', lambda event: self.preview())
         ttk.Label(right, text='示意预览：字体与换行以游戏内显示为准。', style='Sub.TLabel').pack(anchor='w')
         self.validation = tk.StringVar(value='22 种语言文本已审计，字形样例已实测；各语言完整剧情同步仍待验证。')
