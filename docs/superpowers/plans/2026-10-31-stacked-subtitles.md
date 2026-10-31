@@ -23,20 +23,20 @@
 ### Task 1: Configuration and layout geometry
 Files: configuration.py, subtitle_layout.py, tests/test_configurator.py, tests/test_subtitle_layout.py.
 Interfaces: Profile.english_first(), Profile.bottom_ui_y(), stacked_pairs(bottom_edge, heights, line_gap, speaker_gap).
-- [ ] Add migration/default/preset validation tests and wrapped/single/double-group geometry cases; run and observe RED.
-- [ ] Implement schema 2 and measured-pair positioning; run base suite GREEN.
-- [ ] Commit configuration and tests.
+- [x] Add migration/default/preset validation tests and wrapped/single/double-group geometry cases; run and observe RED.
+- [x] Implement schema 2 and measured-pair positioning; run base suite GREEN.
+- [x] Commit configuration and tests.
 
 ### Task 2: Native component and tool controls
 Files: configurable_overlay.py, configurator_app.py, tests/test_configurator_backend.py, tests/test_configurator_gui.py.
-- [ ] Add real-source tests for stacked generation, legacy split, slot lifecycle and font styles; observe RED.
-- [ ] Add stacked positioning based on TextField.getBounds and active subtitle flags; preserve parenting and independent styles.
-- [ ] Add layout selector, English-first action, bottom margin/gap controls, and measured preview; check them using Tk without applying a patch.
-- [ ] Compile/read back short, wrapped and single-layer profiles using the local original overlay. Run supported local tests GREEN and commit.
+- [x] Add real-source tests for stacked generation, legacy split, slot lifecycle and font styles; observe RED.
+- [x] Add stacked positioning based on TextField.getBounds and active subtitle flags; preserve parenting and independent styles.
+- [x] Add layout selector, English-first action, bottom margin/gap controls, and measured preview; check them using Tk without applying a patch.
+- [x] Compile/read back short, wrapped and single-layer profiles using the local original overlay. Run supported local tests GREEN and commit.
 
 ### Task 3: Portable update and publication
 Files: package_tool.py, README.md, 工具使用说明.md, 验证报告.md.
-- [ ] Bump preview to v0.2.0; include subtitle_layout.py and English-first example. Preserve all licenses.
-- [ ] Build separate updated portable folder; run isolated runtime self-test and ZIP CRC/SHA/asset-exclusion checks.
-- [ ] Perform a fresh branch review and resolve important findings with reproductions.
-- [ ] Fast-forward main after checks, publish prerelease assets and verify server digests and CI. Update the user's local launcher without overwriting the old package.
+- [x] Bump preview to v0.2.0; include subtitle_layout.py and English-first example. Preserve all licenses.
+- [x] Build separate updated portable folder; run isolated runtime self-test and ZIP CRC/SHA/asset-exclusion checks.
+- [x] Perform a fresh branch review and resolve important findings with reproductions.
+- [x] Fast-forward main after checks, publish prerelease assets and verify server digests and CI. Update the user's local launcher without overwriting the old package.
