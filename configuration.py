@@ -1,5 +1,5 @@
 """Portable, versioned user preferences; no game data or machine paths."""
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 import json
 import math
 from pathlib import Path
@@ -40,7 +40,10 @@ LANGUAGES = {
 
 @dataclass(frozen=True)
 class Profile:
-    schema_version: int = 1
+    schema_version: int = 2
+    layout: str = 'split'
+    bottom_margin_px: float = 100
+    line_gap_px: float = 8
     top_language: str | None = 'zh-CN'
     bottom_language: str | None = 'en'
     top_size: float = 28
@@ -54,8 +57,10 @@ class Profile:
     output_height: int = 1080
 
     def __post_init__(self):
-        if type(self.schema_version) is not int or self.schema_version != 1:
+        if type(self.schema_version) is not int or self.schema_version != 2:
             raise ValueError('不支持此配置版本，请更新工具。')
+        if not isinstance(self.layout, str) or self.layout not in ('split', 'stacked'):
+            raise ValueError('未知字幕布局。')
         for key in ('top_language', 'bottom_language'):
             value = getattr(self, key)
             if value is not None and (not isinstance(value, str) or value not in LANGUAGES):
@@ -70,7 +75,9 @@ class Profile:
             if type(value) is not int or not 480 <= value <= 16384:
                 raise ValueError('游戏输出尺寸应为 480–16384 像素的整数。')
         for key, low, high in (('top_size', 16, 56), ('bottom_size', 16, 56),
-                               ('top_margin_px', 0, self.output_height * .35)):
+                               ('top_margin_px', 0, self.output_height * .35),
+                               ('bottom_margin_px', 0, self.output_height * .35),
+                               ('line_gap_px', 0, 120)):
             value = getattr(self, key)
             if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f'{key} 超出允许范围。')
@@ -82,6 +89,13 @@ class Profile:
     def from_dict(cls, value):
         if not isinstance(value, dict) or value.keys() - {f.name for f in fields(cls)}:
             raise ValueError('配置含未知字段或格式错误。')
+        version = value.get('schema_version', 1)
+        if type(version) is not int or version not in (1, 2):
+            raise ValueError('不支持此配置版本，请更新工具。')
+        if version == 1:
+            if value.keys() & {'layout', 'bottom_margin_px', 'line_gap_px'}:
+                raise ValueError('旧版配置不能含新版布局字段。')
+            value = dict(value, schema_version=2, layout='split')
         return cls(**value)
 
     @classmethod
@@ -99,3 +113,12 @@ class Profile:
         scale = self.ui_scale()
         letterbox = (self.output_height - 1080 * scale) / 2
         return (self.top_margin_px - letterbox) / scale
+
+    def bottom_ui_y(self):
+        scale = self.ui_scale()
+        letterbox = (self.output_height - 1080 * scale) / 2
+        return (self.output_height - self.bottom_margin_px - letterbox) / scale
+
+    def english_first(self):
+        return replace(self, layout='stacked', top_language='en', bottom_language='zh-CN',
+                       top_size=36, bottom_size=24)

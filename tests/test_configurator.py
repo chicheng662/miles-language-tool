@@ -36,6 +36,41 @@ class ConfigTests(unittest.TestCase):
         self.assertAlmostEqual(mod.Profile(output_width=1920, output_height=1080).top_ui_y(), 20)
         self.assertAlmostEqual(mod.Profile(output_width=3440, output_height=1440).top_ui_y(), 15)
 
+    def test_v1_profile_keeps_split_layout_and_migrates(self):
+        profile = self.config().Profile.from_dict({'schema_version': 1, 'top_language': 'zh-CN',
+                                                   'bottom_language': 'en', 'top_size': 28})
+        self.assertEqual((profile.schema_version, profile.layout), (2, 'split'))
+        self.assertEqual((profile.top_language, profile.bottom_language), ('zh-CN', 'en'))
+
+    def test_english_first_preset_preserves_resolution_and_styles(self):
+        profile = self.config().Profile(output_width=2560, output_height=1600,
+                                       bottom_outline=False, top_background=True).english_first()
+        self.assertEqual((profile.layout, profile.top_language, profile.bottom_language),
+                         ('stacked', 'en', 'zh-CN'))
+        self.assertEqual((profile.top_size, profile.bottom_size), (36, 24))
+        self.assertEqual((profile.output_width, profile.output_height), (2560, 1600))
+        self.assertTrue(profile.top_background)
+        self.assertFalse(profile.bottom_outline)
+        self.assertEqual((profile.bottom_margin_px, profile.line_gap_px), (100, 8))
+        self.assertEqual(self.config().Profile.from_dict(profile.to_dict()), profile)
+
+    def test_bottom_anchor_is_measured_from_output_edge(self):
+        for width, height in ((1920, 1080), (2560, 1600), (3440, 1440)):
+            profile = self.config().Profile(output_width=width, output_height=height)
+            scale = profile.ui_scale()
+            letterbox = (height - 1080 * scale) / 2
+            self.assertAlmostEqual(profile.bottom_ui_y() * scale + letterbox, height - 100)
+
+    def test_new_layout_fields_reject_invalid_values_and_v1_extensions(self):
+        mod = self.config()
+        for changes in ({'layout': 'unknown'}, {'layout': []}, {'bottom_margin_px': -1},
+                        {'bottom_margin_px': float('inf')}, {'line_gap_px': -1},
+                        {'line_gap_px': 121}, {'line_gap_px': True}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                mod.Profile.from_dict(dict(mod.Profile().to_dict(), **changes))
+        with self.assertRaises(ValueError):
+            mod.Profile.from_dict({'schema_version': 1, 'layout': 'stacked'})
+
     def test_all_language_ids_are_unique(self):
         mod = self.config()
         self.assertEqual(len(mod.LANGUAGES), 22)
