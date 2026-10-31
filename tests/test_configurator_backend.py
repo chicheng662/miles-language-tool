@@ -65,6 +65,17 @@ class ConfiguratorBackendTests(unittest.TestCase):
         self.assertTrue('this.subtitle_1.y = this.sub_y;' in placement, 'Native-only transition must restore the original anchor')
         self.assertFalse('owner[\"mmDual\"] != true) continue' in placement, 'Do not skip native subtitle slots')
 
+    def test_sealed_native_subtitle_clips_are_not_given_dynamic_properties(self):
+        source_path = Path(os.environ.get('MILES_OVERLAY_AS', str(GAME / 'BilingualSubtitles/build/as-original/scripts/overlay/OverlayManager.as')))
+        if not source_path.is_file():
+            self.skipTest('Set MILES_OVERLAY_AS for native source integration')
+        original = source_path.read_text(encoding='utf-8-sig')
+        for profile in (Profile(), Profile().english_first()):
+            changed = self.module().patch_configurable_source(original, profile)
+            self.assertFalse('param1["mmDual"]' in changed, 'Native subtitle_mc is sealed')
+            self.assertFalse('owner["mmDual"]' in changed, 'Do not read undeclared native properties')
+            self.assertFalse('subtitle_1["mmDual"]' in changed, 'State must belong to our component')
+
     @patch('configurator_backend.game_running', return_value=False)
     def test_build_keeps_menus_and_english_timing(self, guard):
         mod = self.module()

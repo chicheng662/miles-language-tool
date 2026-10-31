@@ -43,7 +43,7 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
          var mmStart:int = param2.indexOf("[[MMID:");
          var mmEnd:int = param2.indexOf("]]",mmStart + 7);
          var mmDual:Boolean = mmStart >= 0 && mmEnd >= mmStart + 7;
-         param1["mmDual"] = mmDual;
+         this.mmDualSlots[param1 == this.subtitle_1 ? 0 : 1] = mmDual;
          if(mmDual)
          {
             var mmID:int = int(param2.substring(mmStart + 7,mmEnd));
@@ -138,7 +138,7 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
 
       private function MMPlaceStacked() : void
       {
-         var hasDual:Boolean = (this.sub_1_show && this.subtitle_1 != null && this.subtitle_1["mmDual"] == true) || (this.sub_2_show && this.subtitle_2 != null && this.subtitle_2["mmDual"] == true);
+         var hasDual:Boolean = (this.sub_1_show && this.subtitle_1 != null && this.mmDualSlots[0] == true) || (this.sub_2_show && this.subtitle_2 != null && this.mmDualSlots[1] == true);
          if(!hasDual)
          {
             if(this.subtitle_1 != null) this.subtitle_1.y = this.sub_y;
@@ -170,7 +170,7 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
             else if(owner.message.medium_txt.visible) lowerField = owner.message.medium_txt;
             layer = owner.getChildByName("mmTop") as MovieClip;
             lower = lowerField.visible && lowerField.text.length > 0;
-            upper = owner["mmDual"] == true && layer != null && layer.visible && layer.message.txt.text.length > 0;
+            upper = this.mmDualSlots[i] == true && layer != null && layer.visible && layer.message.txt.text.length > 0;
             if(!lower && !upper) continue;
             if(lower)
             {
@@ -215,7 +215,9 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
         boundary = '      }\n      \n' + anchor
         replace_once(boundary, '         this.MMPlaceTop();\n' + boundary)
     data = '\x1e'.join(lower + '\x1f' + upper for lower, upper in table)
-    dictionary = '''      private var mmLines:Array = null;
+    dictionary = '''      private var mmDualSlots:Array = [false,false];
+
+      private var mmLines:Array = null;
 
       private function MMReadLine(id:int) : Array
       {
