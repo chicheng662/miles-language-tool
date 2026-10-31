@@ -45,6 +45,23 @@ class ConfiguratorBackendTests(unittest.TestCase):
         self.assertIn('var top:Number = -45;', changed)
         self.assertNotIn('MMShowChinese', changed)
 
+    def test_stacked_component_uses_measured_bounds_and_native_lifecycle(self):
+        source_path = Path(os.environ.get('MILES_OVERLAY_AS', str(GAME / 'BilingualSubtitles/build/as-original/scripts/overlay/OverlayManager.as')))
+        if not source_path.is_file():
+            self.skipTest('Set MILES_OVERLAY_AS for native source integration')
+        changed = self.module().patch_configurable_source(source_path.read_text(encoding='utf-8-sig'),
+                                                         Profile().english_first(), [('你好', 'Hello')])
+        self.assertIn('function MMPlaceStacked', changed)
+        self.assertIn('getBounds(owner)', changed)
+        self.assertIn('getBounds(layer)', changed)
+        self.assertIn('owner.addChild(layer)', changed)
+        hide = changed.split('public function HideText(', 1)[1].split('private var mmLines', 1)[0]
+        self.assertTrue('this.MMPlaceTop();' in hide, 'HideText must reflow the remaining subtitle slot')
+        self.assertIn('Tween.FadeTo(_loc3_', hide)
+        self.assertNotIn('removeChild(layer)', changed)
+        placement = changed.split('private function MMPlaceStacked', 1)[1].split('public function FormatSubtitle', 1)[0]
+        self.assertFalse('this.MMPlaceTop();' in placement, 'Placement must not recurse into itself')
+
     @patch('configurator_backend.game_running', return_value=False)
     def test_build_keeps_menus_and_english_timing(self, guard):
         mod = self.module()

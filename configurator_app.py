@@ -13,11 +13,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from configuration import LANGUAGES, Profile
+from subtitle_layout import stacked_pairs
 from configurator_backend import (ROOT, app_data, apply_profile, inspect_game, restore_game,
                                   work_directory, java_command)
 from patch import atomic_write, game_running
 
-TITLE = '迈尔斯 · 多语言字幕工具'
+TITLE = '迈尔斯 · 多语言字幕工具 v0.2.0'
+LAYOUT_LABELS = {'split': '上下分屏', 'stacked': '底部双语紧邻'}
+LAYOUT_CODES = {label: code for code, label in LAYOUT_LABELS.items()}
 NONE = '关闭这一层'
 LABELS = {code: lang.label for code, lang in LANGUAGES.items()}
 CODES = {label: code for code, label in LABELS.items()}
@@ -59,6 +62,8 @@ class Configurator:
         self.inspected_game = None
         self.applied_profile = None
         self.vars = {}
+        self.numeric_widgets = {}
+        self.layer_boxes = {}
         resolution = read_game_resolution()
         if resolution:
             self.profile = replace(self.profile, output_width=resolution[0], output_height=resolution[1])
@@ -101,9 +106,27 @@ class Configurator:
         body_canvas.bind('<MouseWheel>', lambda event: body_canvas.yview_scroll(-int(event.delta / 120), 'units'))
         left = ttk.Frame(body, width=350)
         left.pack(side='left', fill='y', padx=(0, 20))
+        layout_box = ttk.LabelFrame(left, text='字幕布局', padding=12)
+        layout_box.pack(fill='x', pady=(0, 10))
+        layout_var = tk.StringVar(value=LAYOUT_LABELS[self.profile.layout])
+        self.vars['layout'] = layout_var
+        layout_combo = ttk.Combobox(layout_box, textvariable=layout_var,
+                                    values=list(LAYOUT_LABELS.values()), state='readonly', width=29)
+        layout_combo.pack(fill='x')
+        layout_combo.bind('<<ComboboxSelected>>', lambda event: self.preview())
+        self.widgets.append(layout_combo)
+        self.button(layout_box, '英文优先：大英文在上 · 小中文在下', self.english_first).pack(fill='x', pady=(8, 0))
         self.layer_controls(left, 'top', '顶部辅助字幕')
         self.button(left, '⇅  交换上下语言', self.swap).pack(fill='x', pady=8)
         self.layer_controls(left, 'bottom', '底部主字幕')
+        placement = ttk.LabelFrame(left, text='紧邻布局位置（输出像素）', padding=12)
+        placement.pack(fill='x', pady=(12, 0))
+        for name, label, limit in (('bottom_margin_px', '距底部 ', self.profile.output_height * .35),
+                                   ('line_gap_px', '两行间距 ', 120)):
+            row = ttk.Frame(placement)
+            row.pack(fill='x', pady=3)
+            ttk.Label(row, text=label).pack(side='left')
+            self.number(row, name, getattr(self.profile, name), 0, limit).pack(side='right')
         screen = ttk.LabelFrame(left, text='游戏输出画面', padding=12)
         screen.pack(fill='x', pady=(12, 0))
         row = ttk.Frame(screen)
@@ -140,6 +163,7 @@ class Configurator:
         self.progress.pack(fill='x', pady=(12, 5))
         self.status = tk.StringVar(value='就绪。配置保存在本机，游戏运行时不能安装或还原。')
         ttk.Label(outer, textvariable=self.status, wraplength=1050).pack(anchor='w')
+        self.update_layout_controls()
         self.root.after(100, self.poll)
         self.root.after(250, self.check)
 
@@ -163,11 +187,13 @@ class Configurator:
         var.trace_add('write', lambda *args: self.preview())
         widget = ttk.Spinbox(parent, from_=low, to=high, textvariable=var, width=width)
         self.widgets.append(widget)
+        self.numeric_widgets[name] = widget
         return widget
 
     def layer_controls(self, parent, layer, title):
         box = ttk.LabelFrame(parent, text=title, padding=12)
         box.pack(fill='x')
+        self.layer_boxes[layer] = box
         language = getattr(self.profile, layer + '_language')
         var = tk.StringVar(value=LABELS.get(language, NONE))
         self.vars[layer + '_language'] = var
@@ -182,8 +208,8 @@ class Configurator:
         if layer == 'top':
             row2 = ttk.Frame(box)
             row2.pack(fill='x', pady=(8, 0))
-            ttk.Label(row2, text='距顶部（像素） ').pack(side='left')
-            self.number(row2, 'top_margin_px', self.profile.top_margin_px, 0, 1000).pack(side='left')
+            ttk.Label(row2, text='分屏距顶部（像素） ').pack(side='left')
+            self.number(row2, 'top_margin_px', self.profile.top_margin_px, 0, self.profile.output_height * .35).pack(side='left')
         row3 = ttk.Frame(box)
         row3.pack(fill='x', pady=(9, 0))
         for suffix, label in (('outline', '黑色描边'), ('background', '字幕背景')):
@@ -198,7 +224,9 @@ class Configurator:
         value = self.profile.to_dict()
         for name, var in self.vars.items():
             raw = var.get()
-            if name.endswith('_language'):
+            if name == 'layout':
+                value[name] = LAYOUT_CODES[raw]
+            elif name.endswith('_language'):
                 value[name] = None if raw == NONE else CODES[raw]
             elif name in ('output_width', 'output_height'):
                 value[name] = int(raw)
@@ -212,12 +240,44 @@ class Configurator:
         self.profile = profile
         for name, var in self.vars.items():
             value = getattr(profile, name)
-            var.set(LABELS.get(value, NONE) if name.endswith('_language') else value)
+            if name == 'layout':
+                value = LAYOUT_LABELS[value]
+            elif name.endswith('_language'):
+                value = LABELS.get(value, NONE)
+            var.set(value)
         self.preview()
+
+    def update_layout_controls(self):
+        if self.busy or 'layout' not in self.vars:
+            return
+        stacked = self.vars['layout'].get() == LAYOUT_LABELS['stacked']
+        for layer, title in (('top', '上行字幕' if stacked else '顶部辅助字幕'),
+                             ('bottom', '下行字幕' if stacked else '底部主字幕')):
+            if layer in self.layer_boxes:
+                self.layer_boxes[layer].configure(text=title)
+        for name, enabled in (('top_margin_px', not stacked),
+                              ('bottom_margin_px', stacked), ('line_gap_px', stacked)):
+            if name in self.numeric_widgets:
+                self.numeric_widgets[name].configure(state='normal' if enabled else 'disabled')
+        try:
+            high = int(self.vars['output_height'].get()) * .35
+            for name in ('top_margin_px', 'bottom_margin_px'):
+                if name in self.numeric_widgets:
+                    self.numeric_widgets[name].configure(to=high)
+        except (ValueError, KeyError, tk.TclError):
+            pass
+
+    def english_first(self):
+        try:
+            self.set_profile(self.read_profile().english_first())
+            self.status.set('已选择大英文在上、小中文在下；生成并应用后生效。')
+        except (ValueError, KeyError, tk.TclError) as exc:
+            messagebox.showerror(TITLE, str(exc))
 
     def preview(self):
         if not hasattr(self, 'canvas'):
             return
+        self.update_layout_controls()
         canvas = self.canvas
         canvas.delete('all')
         width, height = max(canvas.winfo_width(), 100), max(canvas.winfo_height(), 100)
@@ -230,26 +290,46 @@ class Configurator:
         vw, vh = profile.output_width * ratio, profile.output_height * ratio
         x, y = (width-vw)/2, (height-vh)/2
         canvas.create_rectangle(x, y, x+vw, y+vh, fill='#14273a', outline='#456079')
-        for index, (fraction, tall) in enumerate(((.08,.22),(.20,.38),(.34,.27),(.50,.48),(.66,.33),(.82,.24))):
+        for fraction, tall in ((.08,.22),(.20,.38),(.34,.27),(.50,.48),(.66,.33),(.82,.24)):
             left = x + vw*fraction
             canvas.create_rectangle(left, y+vh*(1-tall), left+vw*.11, y+vh, fill='#1e3a4f', outline='')
         canvas.create_text(x+vw/2, y+vh/2, text='GAME VIEW', fill='#496478', font=('Segoe UI', 15, 'bold'))
+        metrics = {}
         for layer in ('top', 'bottom'):
             code = getattr(profile, layer + '_language')
             if code is None:
                 continue
-            size = max(10, round(getattr(profile, layer + '_size') * profile.ui_scale() * ratio))
-            ypos = y + profile.top_margin_px*ratio if layer == 'top' else y+vh*.86
+            size = max(6, round(getattr(profile, layer + '_size') * profile.ui_scale() * ratio))
+            font = ('Microsoft YaHei UI', -size)
             text = LANGUAGES[code].sample
+            probe = canvas.create_text(0, 0, text=text, font=font, anchor='n', width=vw*.84)
+            bounds = canvas.bbox(probe)
+            metrics[layer] = (text, font, bounds[3] - bounds[1], bounds[1])
+            canvas.delete(probe)
+        if profile.layout == 'stacked':
+            upper, lower = stacked_pairs(y+vh-profile.bottom_margin_px*ratio,
+                                         [(metrics.get('top', ('', '', 0))[2],
+                                           metrics.get('bottom', ('', '', 0))[2])],
+                                         profile.line_gap_px*ratio)[0]
+            positions = {'top': upper, 'bottom': lower}
+        else:
+            positions = {'top': y+profile.top_margin_px*ratio, 'bottom': y+vh*.86}
+        for layer, (text, font, text_height, offset) in metrics.items():
+            ypos = positions[layer]
+            anchor_y = ypos - offset
             if getattr(profile, layer + '_background'):
-                canvas.create_rectangle(x+vw*.10, ypos, x+vw*.90, ypos+size*2.1, fill='#080d14', outline='')
+                canvas.create_rectangle(x+vw*.10, ypos-3, x+vw*.90, ypos+text_height+3,
+                                        fill='#080d14', outline='')
             if getattr(profile, layer + '_outline'):
                 for dx, dy in ((-1,0),(1,0),(0,-1),(0,1)):
-                    canvas.create_text(x+vw/2+dx, ypos+dy, text=text, fill='black', font=('Microsoft YaHei UI', -size), anchor='n', width=vw*.84)
-            canvas.create_text(x+vw/2, ypos, text=text, fill='#f5f7fb', font=('Microsoft YaHei UI', -size), anchor='n', width=vw*.84)
+                    canvas.create_text(x+vw/2+dx, anchor_y+dy, text=text, fill='black', font=font,
+                                       anchor='n', width=vw*.84)
+            canvas.create_text(x+vw/2, anchor_y, text=text, fill='#f5f7fb', font=font,
+                               anchor='n', width=vw*.84, tags=('preview-' + layer,))
         if hasattr(self, 'validation'):
-            self.validation.set('当前选择：' + ' / '.join(LABELS[c] for c in (profile.top_language, profile.bottom_language) if c)
-                                + '。文本已审计，字形样例已实测；完整剧情同步待验证。')
+            self.validation.set('当前布局：' + LAYOUT_LABELS[profile.layout] + '；'
+                                + ' / '.join(LABELS[c] for c in (profile.top_language, profile.bottom_language) if c)
+                                + '。示意预览；新布局游戏内效果待验证。')
 
     def swap(self):
         top, bottom = self.vars['top_language'].get(), self.vars['bottom_language'].get()
@@ -304,6 +384,7 @@ class Configurator:
                 self.progress.stop()
                 for widget in self.widgets:
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
+                self.update_layout_controls()
                 if kind == 'error':
                     self.status.set('操作未完成，请查看提示。')
                     messagebox.showerror(TITLE, value)
@@ -424,7 +505,7 @@ def self_test(output, game=None):
         from configurator_backend import OVERLAY, compile_overlay
         original = GameArchive(info['game'], info['original_toc']).extract(OVERLAY)
         font_work = Path(output).resolve().parent / 'portable-font-self-test'
-        probe = compile_overlay(original, Profile(top_language='ko'), font_work,
+        probe = compile_overlay(original, Profile(layout='stacked', top_language='ko'), font_work,
                                 lambda message: None, [('Hello', '한국어 Русский Ελληνικά')])
         result['bundled_font_pipeline'] = len(probe) > len(original)
     atomic_write(Path(output), json.dumps(result, indent=2).encode())

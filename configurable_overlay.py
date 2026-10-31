@@ -34,12 +34,16 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
       }
    }
 ''' + source[ending:]
+    if profile.layout == 'stacked':
+        replace_once('   import flash.geom.ColorTransform;',
+                     '   import flash.geom.ColorTransform;\n   import flash.geom.Rectangle;')
     anchor = '      protected function ShowSubtitle(param1:MovieClip, param2:String, param3:Boolean, param4:uint, param5:Number) : void\n      {'
     replace_once(anchor, anchor + '''
          var mmTop:String = "";
          var mmStart:int = param2.indexOf("[[MMID:");
          var mmEnd:int = param2.indexOf("]]",mmStart + 7);
          var mmDual:Boolean = mmStart >= 0 && mmEnd >= mmStart + 7;
+         param1["mmDual"] = mmDual;
          if(mmDual)
          {
             var mmID:int = int(param2.substring(mmStart + 7,mmEnd));
@@ -125,6 +129,64 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
       }
 
 '''
+    if profile.layout == 'stacked':
+        start = snippet.index('      private function MMPlaceTop()')
+        snippet = snippet[:start] + """      private function MMPlaceTop() : void
+      {
+         this.MMPlaceStacked();
+      }
+
+      private function MMPlaceStacked() : void
+      {
+         var cursor:Number = MM_BOTTOM_Y;
+         var gap:Number = MM_LINE_GAP;
+         var owners:Array = [this.subtitle_1,this.subtitle_2];
+         var shown:Array = [this.sub_1_show,this.sub_2_show];
+         var owner:MovieClip;
+         var layer:MovieClip;
+         var lowerField:TextField;
+         var lowerBounds:Rectangle;
+         var upperBounds:Rectangle;
+         var lower:Boolean;
+         var upper:Boolean;
+         for(var i:int = 0; i < owners.length; i++)
+         {
+            owner = owners[i] as MovieClip;
+            if(owner == null || !shown[i] || owner["mmDual"] != true) continue;
+            lowerField = owner.message.txt;
+            layer = owner.getChildByName("mmTop") as MovieClip;
+            lower = lowerField.visible && lowerField.text.length > 0;
+            upper = layer != null && layer.visible && layer.message.txt.text.length > 0;
+            if(!lower && !upper) continue;
+            if(lower)
+            {
+               lowerBounds = lowerField.getBounds(owner);
+               owner.y = cursor - lowerBounds.bottom;
+               cursor -= lowerBounds.height;
+            }
+            if(upper)
+            {
+               upperBounds = layer.message.txt.getBounds(layer);
+               layer.x = 0;
+               if(lower)
+               {
+                  cursor -= gap;
+                  layer.y = cursor - upperBounds.bottom - owner.y;
+               }
+               else
+               {
+                  layer.y = 0;
+                  owner.y = cursor - upperBounds.bottom;
+               }
+               cursor -= upperBounds.height;
+            }
+            cursor -= 15;
+         }
+      }
+
+"""
+        snippet = snippet.replace('MM_BOTTOM_Y', f'{profile.bottom_ui_y():.8g}')
+        snippet = snippet.replace('MM_LINE_GAP', f'{profile.line_gap_px / profile.ui_scale():.8g}')
     for token, value in {
         'MM_TOP_Y': f'{profile.top_ui_y():.8g}',
         'MM_TOP_SIZE': f'{profile.top_size:g}',
@@ -134,6 +196,10 @@ def patch_configurable_source(source: str, profile: Profile, table=()) -> str:
     }.items():
         snippet = snippet.replace(token, value)
     anchor = '      public function FormatSubtitle(param1:MovieClip) : void'
+    if profile.layout == 'stacked':
+        # Insert in HideText before helper methods are inserted at FormatSubtitle.
+        boundary = '      }\n      \n' + anchor
+        replace_once(boundary, '         this.MMPlaceTop();\n' + boundary)
     data = '\x1e'.join(lower + '\x1f' + upper for lower, upper in table)
     dictionary = '''      private var mmLines:Array = null;
 
