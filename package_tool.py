@@ -9,7 +9,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 SOURCE_FILES = ('archive.py', 'localization.py', 'dialogue.py', 'configuration.py',
                 'patch.py', 'configurable_overlay.py', 'configurator_backend.py', 'configurator_app.py',
-                'language_baselines.json', 'subtitle_layout.py')
+                'language_baselines.json', 'subtitle_layout.py', 'game_registry.py', 'spiderman2_archive.py',
+                'spiderman2_backend.py', 'spiderman2_overlay.py', 'spiderman2_baselines.json')
 
 
 def main():
@@ -21,6 +22,8 @@ def main():
         '--noconfirm', '--clean', '--onedir', '--windowed', '--name', 'MilesLanguageTool',
         '--distpath', str(dist), '--workpath', str(build / 'work'), '--specpath', str(build),
         '--paths', str(ROOT), '--add-data', str(ROOT / 'language_baselines.json') + ';.',
+        '--add-data', str(ROOT / 'spiderman2_baselines.json') + ';.',
+        '--add-data', str(ROOT / 'runtime/spiderman2_subtitles.js') + ';runtime',
         str(ROOT / 'configurator_app.py'),
     ])
     package = dist / 'MilesLanguageTool'
@@ -39,6 +42,8 @@ def main():
     for name in SOURCE_FILES:
         shutil.copy2(ROOT / name, source / name)
     shutil.copy2(ROOT / 'runtime/EmbedLearningFont.java', source / 'EmbedLearningFont.java')
+    (source / 'runtime').mkdir(exist_ok=True)
+    shutil.copy2(ROOT / 'runtime/spiderman2_subtitles.js', source / 'runtime/spiderman2_subtitles.js')
     for source_name, dest_name in (('工具使用说明.md', '使用说明.md'), ('验证报告.md', '验证报告.md')):
         shutil.copy2(ROOT / source_name, package / dest_name)
     from configuration import Profile
@@ -65,7 +70,7 @@ def main():
     manifest = {p.relative_to(package).as_posix(): sha256(p.read_bytes())
                 for p in package.rglob('*') if p.is_file() and p.name != 'SHA256SUMS.json'}
     (package / 'SHA256SUMS.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
-    archive = dist / 'MilesLanguageTool-v0.2.0-win64.zip'
+    archive = dist / 'MilesLanguageTool-v0.3.0-win64.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as stream:
         for path in package.rglob('*'):
             if path.is_file():

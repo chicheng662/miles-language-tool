@@ -75,11 +75,28 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def game_running() -> bool:
+def game_paths(game):
+    """Resolve only the two supported layouts; never trust paths from manifests."""
+    game = Path(game).resolve()
+    is_sequel = (game / 'Spider-Man2.exe').is_file()
+    assets = game / ('d' if is_sequel else 'asset_archive')
+    toc = game / 'toc' if is_sequel else assets / 'toc'
+    if not assets.resolve().is_relative_to(game) or not toc.resolve().is_relative_to(game):
+        raise ValueError('Game paths escape the selected directory')
+    return toc, assets, 'spider-man-2' if is_sequel else 'miles'
+
+
+def game_running(game=None) -> bool:
     if os.name != 'nt':
         return False
-    result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq MilesMorales.exe', '/FO', 'CSV', '/NH'], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-    return b'milesmorales.exe' in result.stdout.lower()
+    names = ('MilesMorales.exe', 'Spider-Man2.exe') if game is None else (
+        'Spider-Man2.exe' if game_paths(game)[2] == 'spider-man-2' else 'MilesMorales.exe',)
+    for name in names:
+        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq ' + name, '/FO', 'CSV', '/NH'],
+                                capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if name.lower().encode('ascii') in result.stdout.lower():
+            return True
+    return False
 
 
 def atomic_write(path: Path, data: bytes) -> None:
@@ -99,7 +116,8 @@ def atomic_write(path: Path, data: bytes) -> None:
 
 def read_state(state: Path, game: Path) -> dict:
     data = json.loads((state / 'state.json').read_text(encoding='utf-8'))
-    if data['game'] != str(game.resolve()) or data['archive'] != 'bilingual_subtitles':
+    if (data['game'] != str(game.resolve()) or data['archive'] != 'bilingual_subtitles'
+            or data.get('game_id', 'miles') != game_paths(game)[2]):
         raise ValueError('Backup belongs to another game folder')
     return data
 
@@ -116,12 +134,13 @@ def status(game: Path, state: Path) -> str:
         return 'not-installed'
     data = read_state(state, game)
     checked_backup(state, data['original_toc_sha256'])
-    current = sha256((game / 'asset_archive/toc').read_bytes())
+    toc, assets, game_id = game_paths(game)
+    current = sha256(toc.read_bytes())
     if current == data['original_toc_sha256']:
         return 'restored'
     if current != data['patched_toc_sha256']:
         return 'conflict'
-    archive = game / 'asset_archive' / data['archive']
+    archive = assets / data['archive']
     if not archive.is_file() or sha256(archive.read_bytes()) != data['archive_sha256']:
         return 'damaged'
     return 'installed'
@@ -133,18 +152,20 @@ def install_bundle(game: Path, bundle: Path, state: Path) -> None:
 
 
 def _install_bundle(game: Path, bundle: Path, state: Path) -> None:
-    if game_running():
-        raise RuntimeError('Close MilesMorales.exe before installing or restoring the patch')
+    if game_running(game):
+        raise RuntimeError('Close the selected game before installing or restoring the patch')
     game, bundle, state = Path(game).resolve(), Path(bundle).resolve(), Path(state).resolve()
     manifest = json.loads((bundle / 'manifest.json').read_text(encoding='utf-8'))
-    if manifest.get('format') != 1 or manifest.get('archive') != 'bilingual_subtitles':
+    toc, assets, game_id = game_paths(game)
+    if (manifest.get('format') != 1 or manifest.get('archive') != 'bilingual_subtitles'
+            or manifest.get('game_id', 'miles') != game_id):
         raise ValueError('Unsupported patch manifest')
     patched = (bundle / 'toc.patched').read_bytes()
     payload = (bundle / 'bilingual_subtitles').read_bytes()
     if sha256(patched) != manifest['patched_toc_sha256'] or sha256(payload) != manifest['archive_sha256']:
         raise ValueError('Patch payload checksum mismatch')
-    assets = game / 'asset_archive'
-    current = (assets / 'toc').read_bytes()
+    toc, assets, game_id = game_paths(game)
+    current = toc.read_bytes()
     archive = assets / manifest['archive']
     if (state / 'state.json').exists():
         old = read_state(state, game)
@@ -157,7 +178,7 @@ def _install_bundle(game: Path, bundle: Path, state: Path) -> None:
             # First return to the backed-up original; if new installation
             # fails, the game remains at a recoverable original baseline.
             restore(game, state)
-            current = (assets / 'toc').read_bytes()
+            current = toc.read_bytes()
         if sha256(current) != old['original_toc_sha256']:
             raise ValueError('Game TOC changed since installation; restore or resolve the conflict first')
     if sha256(current) != manifest['original_toc_sha256']:
@@ -176,9 +197,9 @@ def _install_bundle(game: Path, bundle: Path, state: Path) -> None:
         atomic_write(archive, payload)
         if sha256(archive.read_bytes()) != manifest['archive_sha256']:
             raise ValueError('Installed archive failed verification')
-        atomic_write(assets / 'toc', patched)
+        atomic_write(toc, patched)
     except BaseException:
-        if sha256((assets / 'toc').read_bytes()) == manifest['original_toc_sha256'] and archive.exists() and sha256(archive.read_bytes()) == manifest['archive_sha256']:
+        if sha256(toc.read_bytes()) == manifest['original_toc_sha256'] and archive.exists() and sha256(archive.read_bytes()) == manifest['archive_sha256']:
             archive.unlink()
         raise
     if status(game, state) != 'installed':
@@ -191,22 +212,22 @@ def restore(game: Path, state: Path) -> None:
 
 
 def _restore(game: Path, state: Path) -> None:
-    if game_running():
-        raise RuntimeError('Close MilesMorales.exe before installing or restoring the patch')
+    if game_running(game):
+        raise RuntimeError('Close the selected game before installing or restoring the patch')
     game, state = Path(game).resolve(), Path(state).resolve()
     data = read_state(state, game)
     original = checked_backup(state, data['original_toc_sha256'])
-    assets = game / 'asset_archive'
-    current = sha256((assets / 'toc').read_bytes())
+    toc, assets, game_id = game_paths(game)
+    current = sha256(toc.read_bytes())
     if current not in (data['original_toc_sha256'], data['patched_toc_sha256']):
         raise ValueError('Game TOC contains unrelated later changes; automatic restore would overwrite them')
     archive = assets / data['archive']
     if archive.exists() and sha256(archive.read_bytes()) != data['archive_sha256']:
         raise ValueError('Replacement archive changed; refusing to delete an unknown file')
-    atomic_write(assets / 'toc', original)
+    atomic_write(toc, original)
     if archive.exists():
         archive.unlink()
-    if sha256((assets / 'toc').read_bytes()) != data['original_toc_sha256']:
+    if sha256(toc.read_bytes()) != data['original_toc_sha256']:
         raise ValueError('TOC restore verification failed')
 
 

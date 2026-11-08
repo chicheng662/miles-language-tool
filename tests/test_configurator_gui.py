@@ -56,3 +56,41 @@ class ConfiguratorLayoutTests(unittest.TestCase):
         self.app.vars['output_width'].set(1920)
         self.app.vars['output_height'].set(1080)
         self.assertEqual(self.app.read_profile().layout, 'stacked')
+
+    def test_launch_uses_selected_game_executable(self):
+        from pathlib import Path
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            game=Path(folder)
+            (game/'Spider-Man2.exe').touch()
+            (game/'toc').touch()
+            (game/'d').mkdir()
+            self.app.game_var.set(str(game))
+            with patch('configurator_app.inspect_game',return_value={}), \
+                 patch('configurator_app.read_game_resolution',return_value=None), \
+                 patch('configurator_app.game_running',return_value=False), \
+                 patch('configurator_app.subprocess.Popen') as launch:
+                self.app.launch()
+            self.assertEqual(Path(launch.call_args.args[0][0]).name,'Spider-Man2.exe')
+
+    def test_initial_resolution_uses_supplied_game(self):
+        root = tk.Tk()
+        root.withdraw()
+        self.addCleanup(root.destroy)
+        with patch('configurator_app.read_game_resolution', return_value=(2560, 1600)) as read:
+            app = Configurator(root, game='C:/Games/SpiderMan2')
+        read.assert_called_once_with('C:/Games/SpiderMan2')
+        self.assertEqual(app.read_profile().output_height, 1600)
+
+    @patch('configurator_app.atomic_write')
+    def test_checked_shows_spiderman2_identity(self,write):
+        from pathlib import Path
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            self.app.applied_profile = Profile()
+            self.app.checked({'game':Path(folder),'state':Path(folder)/'state',
+                              'status':'not-installed','game_id':'spider-man-2',
+                              'game_name':'漫威蜘蛛侠 2','version':'2.810.0.0'})
+        self.assertIsNone(self.app.applied_profile)
+        self.assertIn('漫威蜘蛛侠 2',self.app.game_status.get())
+        self.assertIn('2.810.0.0',self.app.game_status.get())

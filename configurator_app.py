@@ -13,12 +13,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from configuration import LANGUAGES, Profile
+from game_registry import detect_game, MILES, SPIDER_MAN_2
 from subtitle_layout import stacked_pairs
 from configurator_backend import (ROOT, app_data, apply_profile, inspect_game, restore_game,
                                   work_directory, java_command)
 from patch import atomic_write, game_running
 
-TITLE = '迈尔斯 · 多语言字幕工具 v0.2.0'
+TITLE = '蜘蛛侠 · 多语言字幕工具 v0.3.0'
 LAYOUT_LABELS = {'split': '上下分屏', 'stacked': '底部双语紧邻'}
 LAYOUT_CODES = {label: code for code, label in LAYOUT_LABELS.items()}
 NONE = '关闭这一层'
@@ -26,14 +27,18 @@ LABELS = {code: lang.label for code, lang in LANGUAGES.items()}
 CODES = {label: code for code, label in LABELS.items()}
 
 
-def read_game_resolution():
+def read_game_resolution(game=None):
     """Read graphics settings only. No registry writes and no desktop/DPI guess."""
     if os.name != 'nt':
         return None
     import winreg
     try:
+        spec = detect_game(game) if game else MILES
+    except ValueError:
+        return None
+    try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                           "Software\\Insomniac Games\\Marvel's Spider-Man Miles Morales\\Graphics") as key:
+                           'Software\\Insomniac Games\\' + spec.registry_name + '\\Graphics') as key:
             values = {winreg.EnumValue(key, i)[0]: winreg.EnumValue(key, i)[1]
                       for i in range(winreg.QueryInfoKey(key)[1])}
         full = values.get('Fullscreen', values.get('FullScreen', 1))
@@ -58,13 +63,13 @@ class Configurator:
         self.busy = False
         self.events = queue.Queue()
         self.widgets = []
-        self.profile = Profile()
+        self.profile = Profile().english_first()
         self.inspected_game = None
         self.applied_profile = None
         self.vars = {}
         self.numeric_widgets = {}
         self.layer_boxes = {}
-        resolution = read_game_resolution()
+        resolution = read_game_resolution(game)
         if resolution:
             self.profile = replace(self.profile, output_width=resolution[0], output_height=resolution[1])
         style = ttk.Style()
@@ -77,7 +82,7 @@ class Configurator:
         self.root.configure(bg='#f0f2f5')
         outer = ttk.Frame(root, padding=22)
         outer.pack(fill='both', expand=True)
-        ttk.Label(outer, text='MILES / LANGUAGE LAB', style='Sub.TLabel').pack(anchor='w')
+        ttk.Label(outer, text='SPIDER / LANGUAGE LAB', style='Sub.TLabel').pack(anchor='w')
         ttk.Label(outer, text='把游戏变成你的语言课堂', style='Title.TLabel').pack(anchor='w', pady=(3, 6))
         ttk.Label(outer, text='原生双层字幕 · 英语配音 · 本地生成与安装', style='Sub.TLabel').pack(anchor='w')
 
@@ -89,7 +94,7 @@ class Configurator:
         self.widgets.append(self.entry)
         self.button(directory, '选择游戏目录', self.choose_game).pack(side='left', padx=(8, 0))
         self.button(directory, '检查', self.check).pack(side='left', padx=(8, 0))
-        self.game_status = tk.StringVar(value='选择包含 MilesMorales.exe 的目录；支持资源版本 4.0630.0.0。')
+        self.game_status = tk.StringVar(value='选择迈尔斯或蜘蛛侠 2 的目录；根据可执行文件与资源索引自动识别。')
         ttk.Label(outer, textvariable=self.game_status, style='Sub.TLabel', wraplength=1050).pack(anchor='w', pady=(0, 12))
 
         body_shell = ttk.Frame(outer)
@@ -144,7 +149,7 @@ class Configurator:
         self.canvas.pack(fill='x', pady=(9, 8))
         self.canvas.bind('<Configure>', lambda event: self.preview())
         ttk.Label(right, text='示意预览：字体与换行以游戏内显示为准。', style='Sub.TLabel').pack(anchor='w')
-        self.validation = tk.StringVar(value='22 种语言文本已审计，字形样例已实测；各语言完整剧情同步仍待验证。')
+        self.validation = tk.StringVar(value='语言与字体支持状态按游戏区分；各语言完整剧情同步仍待验证。')
         ttk.Label(right, textvariable=self.validation, wraplength=580, foreground='#8a5b21').pack(anchor='w', pady=(12, 7))
         ttk.Label(right, text='开始前：在游戏中开启字幕，文本语言设为简体中文，配音设为英语。\n工具只修改对话字幕，菜单继续使用原有中文。', wraplength=580, style='Sub.TLabel').pack(anchor='w')
         profiles = ttk.Frame(right)
@@ -329,7 +334,7 @@ class Configurator:
         if hasattr(self, 'validation'):
             self.validation.set('当前布局：' + LAYOUT_LABELS[profile.layout] + '；'
                                 + ' / '.join(LABELS[c] for c in (profile.top_language, profile.bottom_language) if c)
-                                + '。示意预览；新布局游戏内效果待验证。')
+                                + '。示意预览；各游戏、语言的字体与同步状态见验证报告。')
 
     def swap(self):
         top, bottom = self.vars['top_language'].get(), self.vars['bottom_language'].get()
@@ -338,11 +343,11 @@ class Configurator:
         self.preview()
 
     def defaults(self):
-        size = read_game_resolution() or (1920, 1080)
+        size = read_game_resolution(self.game_var.get().strip() or None) or (1920, 1080)
         self.set_profile(Profile(output_width=size[0], output_height=size[1]))
 
     def detect_resolution(self):
-        value = read_game_resolution()
+        value = read_game_resolution(self.game_var.get().strip() or None)
         if not value:
             messagebox.showinfo(TITLE, '没有读到游戏输出尺寸，请手动填写游戏设置中的分辨率。')
             return
@@ -403,9 +408,10 @@ class Configurator:
         self.run_task(lambda progress: inspect_game(Path(folder)), self.checked)
 
     def checked(self, info):
+        self.applied_profile = None
         self.inspected_game = info['game']
         names = {'not-installed':'未安装', 'installed':'已安装', 'restored':'已还原'}
-        self.game_status.set(f"资源版本 {info['version']} · {names.get(info['status'], info['status'])} · 原始资源校验通过")
+        self.game_status.set(f"{info.get('game_name', MILES.name)} · 资源版本 {info['version']} · {names.get(info['status'], info['status'])} · 原始资源校验通过")
         path = info['state'] / 'profile.json'
         if info['status'] == 'installed' and path.is_file():
             try:
@@ -426,7 +432,7 @@ class Configurator:
         self.status.set('正在生成；请保持游戏关闭，完成前不要移动工具或游戏目录。')
         def complete(manifest):
             self.applied_profile = profile
-            self.game_status.set(f"资源版本 4.0630.0.0 · 已安装 · {manifest['dialogue_entries']:,} 条对话")
+            self.game_status.set(f"{manifest.get('game_name', MILES.name)} · 资源版本 {manifest['game_version']} · 已安装 · {manifest['dialogue_entries']:,} 条对话")
             self.status.set('安装与文件校验完成。游戏中使用简体中文文本、英语配音；可启动游戏检查效果。')
             self.inspected_game = game
         self.run_task(lambda progress: apply_profile(game, profile, progress), complete)
@@ -458,13 +464,17 @@ class Configurator:
     def launch(self):
         try:
             game = Path(self.game_var.get().strip()).resolve()
-            inspect_game(game)
-            current = read_game_resolution()
-            if self.applied_profile and current and current != (self.applied_profile.output_width, self.applied_profile.output_height):
+            info = inspect_game(game)
+            installed = None
+            if info.get('status') == 'installed' and (info['state'] / 'profile.json').is_file():
+                installed = Profile.load(info['state'] / 'profile.json')
+            current = read_game_resolution(game)
+            if installed and current and current != (installed.output_width, installed.output_height):
                 messagebox.showinfo(TITLE, '游戏分辨率与已安装配置不同，请先读取分辨率并重新应用。')
                 return
-            if not game_running():
-                subprocess.Popen([str(game / 'MilesMorales.exe')], cwd=game)
+            if not game_running(game):
+                spec = detect_game(game)
+                subprocess.Popen([str(game / spec.executable)], cwd=game)
             self.status.set('游戏已启动；如需切换字幕，请退出游戏后重新应用。')
         except (ValueError, OSError) as exc:
             messagebox.showerror(TITLE, str(exc))
@@ -499,18 +509,26 @@ def self_test(output, game=None):
         info = inspect_game(game)
         result['game_version'] = info['version']
         result['game_status'] = info['status']
-        # Exercise the shipped font helper and Java compiler path as well as Tk.
-        # Uses the player's original UI locally; this probe is never installed.
-        from archive import GameArchive
-        from configurator_backend import OVERLAY, compile_overlay
-        original = GameArchive(info['game'], info['original_toc']).extract(OVERLAY)
-        font_work = Path(output).resolve().parent / 'portable-font-self-test'
-        probe = compile_overlay(original, Profile(layout='stacked', top_language='ko'), font_work,
-                                lambda message: None, [('Hello', '한국어 Русский Ελληνικά')])
-        result['bundled_font_pipeline'] = len(probe) > len(original)
+        if info.get('game_id') == SPIDER_MAN_2.id:
+            from spiderman2_archive import GameArchiveI29
+            from spiderman2_backend import OVERLAY as DOM_OVERLAY
+            from spiderman2_overlay import patch_overlay_js
+            original = GameArchiveI29(info['game'], info['original_toc']).extract(DOM_OVERLAY).decode('utf-8-sig')
+            probe = patch_overlay_js(original, Profile().english_first(), [('你好', 'Hello')])
+            result['bundled_dom_adapter'] = 'MMSpiderMan2' in probe
+        else:
+            # Exercise the shipped font helper and Java compiler path as well as Tk.
+            # Uses the player's original UI locally; this probe is never installed.
+            from archive import GameArchive
+            from configurator_backend import OVERLAY, compile_overlay
+            original = GameArchive(info['game'], info['original_toc']).extract(OVERLAY)
+            font_work = Path(output).resolve().parent / 'portable-font-self-test'
+            probe = compile_overlay(original, Profile(layout='stacked', top_language='ko'), font_work,
+                                    lambda message: None, [('Hello', '한국어 Русский Ελληνικά')])
+            result['bundled_font_pipeline'] = len(probe) > len(original)
     atomic_write(Path(output), json.dumps(result, indent=2).encode())
     return all(result.get(k) for k in ('profile_roundtrip', 'bundled_jpexs')) and (
-        not game or result.get('bundled_font_pipeline', False))
+        not game or result.get('bundled_font_pipeline', False) or result.get('bundled_dom_adapter', False))
 
 
 def main():

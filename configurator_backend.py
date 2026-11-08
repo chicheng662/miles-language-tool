@@ -9,6 +9,7 @@ import sys
 
 from archive import GameArchive
 from configuration import LANGUAGES, Profile
+from game_registry import detect_game, SPIDER_MAN_2, MILES
 from configurable_overlay import patch_configurable_source, uses_learning_font
 from dialogue import pair_layers, parse_segments, encode_wire
 from localization import Localization
@@ -49,6 +50,9 @@ def state_directory(game):
 
 def inspect_game(game):
     game = Path(game).resolve()
+    if detect_game(game) == SPIDER_MAN_2:
+        from spiderman2_backend import inspect_game as inspect_sequel
+        return inspect_sequel(game)
     if not (game / 'MilesMorales.exe').is_file() or not (game / 'asset_archive/toc').is_file():
         raise ValueError('请选择包含 MilesMorales.exe 和 asset_archive 的游戏目录。')
     state = state_directory(game)
@@ -69,7 +73,8 @@ def inspect_game(game):
     for language in ('en', 'zh-CN'):
         validate_localization(archive.extract(LOCALIZATION, LANGUAGES[language].span), language)
     return {'game': game, 'state': state, 'status': state_status, 'original_toc': original,
-            'version': '4.0630.0.0'}
+            'version': '4.0630.0.0', 'game_id': MILES.id, 'game_name': MILES.name,
+            'executable': MILES.executable}
 
 
 def java_command(*args):
@@ -125,7 +130,10 @@ def compile_overlay(original, profile, work, progress, table=()):
 
 
 def build_bundle(game, profile, output, progress=lambda text: None, overlay_compiler=compile_overlay):
-    if game_running():
+    if detect_game(game) == SPIDER_MAN_2:
+        from spiderman2_backend import build_bundle as build_sequel
+        return build_sequel(game, profile, output, progress)
+    if game_running(game):
         raise RuntimeError('请先退出游戏，再生成或应用补丁。')
     info = inspect_game(game)
     game = info['game']
@@ -216,12 +224,18 @@ def _restore_game(game):
 
 def audit_languages(game, output):
     info = inspect_game(game)
-    archive = GameArchive(info['game'], info['original_toc'])
-    en = Localization(validate_localization(archive.extract(LOCALIZATION, 0), 'en')).values
+    spec = detect_game(game)
+    archive_type, loc_type, validate = GameArchive, Localization, validate_localization
+    if spec == SPIDER_MAN_2:
+        from spiderman2_archive import GameArchiveI29, BareLocalization
+        from spiderman2_backend import validate_localization as validate_sequel
+        archive_type, loc_type, validate = GameArchiveI29, BareLocalization, validate_sequel
+    archive = archive_type(info['game'], info['original_toc'])
+    en = loc_type(validate(archive.extract(LOCALIZATION, 0), 'en')).values
     timed = {k: v for k, v in en.items() if parse_segments(v)[1]}
     report = {'game_version': info['version'], 'dialogue_entries': len(timed), 'languages': {}}
-    for code, language in LANGUAGES.items():
-        values = Localization(validate_localization(archive.extract(LOCALIZATION, language.span), code)).values
+    for code, span in spec.language_spans.items():
+        values = loc_type(validate(archive.extract(LOCALIZATION, span), code)).values
         missing, different, chars = [], 0, set()
         for key, text in timed.items():
             paired, coverage = pair_layers(text, text, values.get(key, ''))
@@ -232,7 +246,7 @@ def audit_languages(game, output):
             if [s.tag for s in parse_segments(paired)[1]] != [s.tag for s in parse_segments(text)[1]]:
                 raise ValueError('时间标签变更：' + code + '/' + key)
             chars.update(c for c in values.get(key, '') if ord(c) > 127)
-        report['languages'][code] = {'span': language.span, 'strings': len(values),
+        report['languages'][code] = {'span': span, 'strings': len(values),
                                      'missing_or_partial_dialogue_keys': missing,
                                      'different_segment_count_entries': different,
                                      'non_ascii_characters': len(chars),

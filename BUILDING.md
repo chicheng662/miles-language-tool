@@ -5,6 +5,7 @@
 ## 环境
 
 - Windows 64 位、Python 3.14（已验证，含 Tkinter）。
+- Node.js 用于独立 JavaScript DOM 行为测试；普通玩家和二代补丁生成无需 Node.js。
 - JDK 17+ 用于编译 Java 字体辅助程序。发行包只需 JRE 17。
 - JPEXS 26.3.0：从官方 https://github.com/jindrapetrik/jpexs-decompiler/releases/tag/version26.3.0 获取，解压到 `.tools/ffdec/`，其中应有 `ffdec.jar` 和 `lib/`。
 - Temurin JRE 17：从 https://github.com/adoptium/temurin17-binaries/releases 获取 Windows x64 JRE，解压到 `.tools/jre/<版本>/bin/java.exe`。已验证版本为 17.0.20.1+1。
@@ -38,6 +39,8 @@ javac --release 17 -cp ".tools/ffdec/ffdec.jar;.tools/ffdec/lib/*" -d runtime ru
 ```
 
 该自检会在报告旁生成本地字体编译探针，不会安装探针。测试报告目录可能含从本地游戏读取的脚本，请留在本机。
+
+将 `--game` 换成二代目录时，自检会读取原生 DOM 界面并运行生成适配检查；发行包兼容两款游戏，仍包含迈尔斯所需的 JRE/JPEXS。二代适配模块为 `spiderman2_archive.py`、`spiderman2_backend.py`、`spiderman2_overlay.py` 和 `runtime/spiderman2_subtitles.js`，资源与语言映射独立于迈尔斯。源代码读取相邻的 JS 文件，打包时必须将它作为数据文件包含。
 
 ## LGPL 库替换与重链接
 
